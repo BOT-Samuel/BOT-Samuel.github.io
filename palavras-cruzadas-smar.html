@@ -1,0 +1,732 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Palavras Cruzadas (LD301) — Procedural</title>
+  <style>
+    :root { --cell: 34px; --gap: 2px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background:#0b0f14; color:#e8edf3; }
+    header { padding: 18px 16px; border-bottom: 1px solid #1b2430; background:#0f1620; position: sticky; top:0; z-index:5; }
+    header h1 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0.2px; }
+    header .sub { color:#a9b7c6; font-size: 13px; line-height: 1.35; }
+    main { display: grid; gap: 14px; grid-template-columns: 1.1fr 0.9fr; padding: 14px 16px 24px; align-items: start; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+    .panel { background:#0f1620; border: 1px solid #1b2430; border-radius: 16px; box-shadow: 0 8px 22px rgba(0,0,0,.25); }
+    .panel .hd { padding: 12px 12px 0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content: space-between; }
+    .panel .hd .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .panel .bd { padding: 12px; }
+
+    select, button {
+      background:#121c28; color:#e8edf3; border: 1px solid #223044; border-radius: 12px;
+      padding: 9px 10px; font-size: 13px; cursor:pointer;
+    }
+    button:hover { border-color:#375072; }
+    button:active { transform: translateY(1px); }
+    button.secondary { background:#0f1620; }
+    button.warn { background:#22121a; border-color:#4a2332; }
+    button.ok { background:#11221a; border-color:#2a5d40; }
+
+    .gridWrap { overflow:auto; padding: 10px; border-radius: 14px; border:1px dashed #223044; background:#0b1119; }
+    .grid {
+      display:grid;
+      gap: var(--gap);
+      place-content: start;
+      padding: 6px;
+      background: #0b1119;
+      border-radius: 12px;
+      width: max-content;
+    }
+    .cell {
+      width: var(--cell); height: var(--cell);
+      background:#121c28;
+      border: 1px solid #223044;
+      border-radius: 8px;
+      position: relative;
+      display:flex; align-items:center; justify-content:center;
+      box-sizing:border-box;
+    }
+    .cell.block { background:#070a0f; border-color:#070a0f; }
+    .cell.active { outline: 2px solid #7aa7ff; outline-offset: 0; }
+    .cell.inWord { background:#162236; border-color:#2a3d5d; }
+    .cell.correct { border-color:#2f7b53; }
+    .cell.wrong { border-color:#b14a4a; }
+    .cell .num {
+      position:absolute; left:5px; top:4px;
+      font-size: 10px; color:#9fb2c7; user-select:none;
+    }
+    .cell input {
+      width: 100%; height: 100%;
+      text-align:center; font-weight: 700; font-size: 16px;
+      color:#e8edf3; background: transparent; border: none; outline:none;
+      text-transform: uppercase;
+      caret-color: transparent;
+    }
+    .cell input:disabled { color:#d7e6ff; opacity: 0.9; }
+
+    .clues { display:grid; gap: 12px; }
+    .clueCol { border:1px solid #1b2430; background:#0b1119; border-radius: 14px; overflow:hidden; }
+    .clueCol h3 { margin:0; padding: 10px 12px; font-size: 13px; background:#0f1620; border-bottom:1px solid #1b2430; color:#cfe0f5; }
+    .clueList { padding: 8px 12px 12px; display:grid; gap: 8px; }
+    .clue { font-size: 13px; line-height: 1.25; color:#d7e0ea; cursor:pointer; }
+    .clue:hover { color:#ffffff; }
+    .clue .meta { color:#94a6bb; font-size: 12px; }
+    .muted { color:#94a6bb; font-size: 12px; }
+
+    .toast { margin-top: 8px; font-size: 12px; color:#a9b7c6; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px; padding: 2px 6px; border-radius: 8px; border:1px solid #223044; background:#0b1119; color:#cfe0f5; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Palavras Cruzadas (conteúdo técnico do LD301) — gerador procedural</h1>
+  <div class="sub">
+    Escolha a dificuldade e clique em <b>Gerar</b>. Clique em uma célula para focar uma palavra; use setas para navegar.
+    <span class="muted">Dica: <span class="kbd">Tab</span> alterna entre horizontal/vertical.</span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="hd">
+      <div class="controls">
+        <label class="muted">Dificuldade:</label>
+        <select id="difficulty">
+          <option value="easy">Fácil</option>
+          <option value="medium" selected>Médio</option>
+          <option value="hard">Difícil</option>
+        </select>
+        <button id="btnGenerate">Gerar</button>
+        <button class="secondary" id="btnNewSeed" title="Gera outra variação mantendo a dificuldade">Nova variação</button>
+      </div>
+      <div class="controls">
+        <button class="ok" id="btnCheck">Checar</button>
+        <button class="secondary" id="btnClear">Limpar</button>
+        <button class="warn" id="btnReveal">Revelar</button>
+      </div>
+    </div>
+
+    <div class="bd">
+      <div class="gridWrap">
+        <div id="grid" class="grid" aria-label="Grade de palavras cruzadas"></div>
+      </div>
+      <div class="toast" id="status"></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="hd">
+      <div class="controls">
+        <span class="muted">Definições</span>
+      </div>
+      <div class="controls">
+        <span class="muted" id="stats"></span>
+      </div>
+    </div>
+    <div class="bd">
+      <div class="clues">
+        <div class="clueCol">
+          <h3>Horizontais</h3>
+          <div class="clueList" id="cluesAcross"></div>
+        </div>
+        <div class="clueCol">
+          <h3>Verticais</h3>
+          <div class="clueList" id="cluesDown"></div>
+        </div>
+      </div>
+      <p class="muted" style="margin:12px 2px 0;">
+        Observação: o gerador tenta maximizar cruzamentos; em grades pequenas, algumas palavras podem ficar de fora.
+      </p>
+    </div>
+  </aside>
+</main>
+
+<script>
+/** 
+========= Base de termos (extraída do manual do transmissor LD301) =========
+ *  Importante: palavras normalizadas (sem acentos/sem espaços) para caber em cruzadinhas.
+ */
+const WORD_BANK = [
+  
+
+// Fácil (curtas e bem comuns no documento)
+  
+{a:"HART", c:"Protocolo de comunicação.", d:1},
+  
+
+{a:"LD300", c:"Família de transmissores SMAR aplicada a pressão/nível.", d:1},  
+{a:"FY300", c:"Posicionador inteligente de válvulas da SMAR.", d:1},
+{a:"DISPLAY", c:"Indicação local no instrumento (mostrador/indicador).", d:1},
+{a:"INMETRO", c:"Certificação citada para uso em área classificada no Brasil.", d:1},
+  
+{a:"SENSOR", c:"Elemento que detecta a variável (pressão/posição) no instrumento.", d:1},
+{a:"PRESSAO", c:"Grandeza medida pelo transmissor (em kPa, bar, etc.).", d:2},
+ 
+{a:"DIFERENCIAL", c:"Tipo de pressão medida como diferença entre dois pontos.", d:2},
+ 
+{a:"CORRENTE", c:"Grandeza do sinal de saída (ex.: 4–20 mA).", d:2},
+   
+{a:"MANOMETRICA", c:"Pressão referenciada à atmosfera.", d:2},
+  
+
+// Médio (médias/longas)
+  
+ 
+{a:"ATEX", c:"Certificação europeia para atmosferas explosivas.", d:1},
+ 
+{a:"TEFLON", c:"Material de vedação (PTFE).", d:1},
+ 
+{a:"FLANGE", c:"Elemento de conexão mecânica citado em várias opções.", d:1},
+
+   
+{a:"ABSOLUTA", c:"Pressão referenciada ao vácuo.", d:2},
+  
+{a:"DIAFRAGMA", c:"Elemento sensível que separa o processo do sensor.", d:2},
+  
+{a:"VEDACAO", c:"Conjunto/elemento de selagem (anéis, juntas).", d:2},
+  
+{a:"CARCACA", c:"Invólucro do instrumento.", d:2},
+ 
+{a:"SETPOINT", c:"Referência de controle que o posicionador usa para definir posição.", d:2},
+{a:"BURNOUT", c:"Condição de falha (início ou fim de escala).", d:2},
+  
+{a:"SILICONE", c:"Óleo silicone citado como fluido de enchimento.", d:3},
+  
+{a:"PID", c:"Configuração de controle (com/sem) citado no catalogo.", d:1},
+ 
+
+// Difícil (mais técnicas/longas e com menos cruzamentos)
+  
+
+ 
+{a:"MONEL", c:"Liga 400 citada como material para diafragma/peças.", d:3},
+  
+{a:"TANTALO", c:"Material citado para diafragma (alta resistência química).", d:3},
+  
+{a:"HASTELLOY", c:"Liga Níquel-cromo-molibdênio (Ni-Mo-Cr) usada em diafragma/partes molhadas.", d:3},
+
+{a:"KALREZ", c:"Elastômero especial usado em anéis de vedação.", d:3},
+ 
+{a:"FLUOROLUBE", c:"Fluido de enchimento inerte citado.", d:3},
+  
+{a:"HISTERESE", c:"Efeito/ensaio de leitura na subida/descida.", d:2},
+ 
+{a:"SELOREMOTO", c:"Opção de conexão ao processo (duas palavras)", d:3},
+
+{a:"WIRELESSHART", c:"Versão sem fio do HART (citada em variações como LD400WH).", d:2},  
+
+
+];
+
+function normalizeWord(s){
+  return (s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .toUpperCase()
+    .replace(/[^A-Z]/g,"");
+}
+function shuffle(arr, rng=Math.random){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pickWords(level, seed){
+  const rng = mulberry32(seed);
+  const all = WORD_BANK
+    .map(w => ({...w, a: normalizeWord(w.a)}))
+    .filter(w => w.d <= (level==="easy"?1:(level==="medium"?2:3)))
+    .filter(w => w.a.length >= 3);
+
+  // tamanhos e quantidades por dificuldade
+  const cfg = {
+    easy:   {n: 10, size: 12, cell: 36, attempts: 250},
+    medium: {n: 15, size: 15, cell: 34, attempts: 400},
+    hard:   {n: 22, size: 19, cell: 32, attempts: 700},
+  }[level];
+
+  // ordenar por tamanho desc para ajudar encaixe; depois embaralhar levemente
+  let pool = [...all];
+  shuffle(pool, rng);
+  pool.sort((x,y)=> y.a.length - x.a.length);
+
+  // seleção
+  const selected = [];
+  for(const w of pool){
+    if(selected.length >= cfg.n) break;
+    if(!selected.some(s => s.a === w.a)) selected.push(w);
+  }
+  shuffle(selected, rng);
+
+  return {words: selected, cfg, rng};
+}
+
+function makeEmptyGrid(size){
+  return Array.from({length:size},()=>Array.from({length:size},()=>({ch:"", num:0})));
+}
+
+function inBounds(size,r,c){ return r>=0 && c>=0 && r<size && c<size; }
+
+function canPlace(grid, word, r0, c0, dir){
+  const size = grid.length;
+  const dr = dir==="down"?1:0, dc = dir==="across"?1:0;
+
+  // célula anterior e posterior vazias (evitar encostar palavras)
+  const rPrev = r0 - dr, cPrev = c0 - dc;
+  if(inBounds(size,rPrev,cPrev) && grid[rPrev][cPrev].ch) return null;
+
+  const rEnd = r0 + dr*word.length, cEnd = c0 + dc*word.length;
+  if(inBounds(size,rEnd,cEnd) && grid[rEnd][cEnd].ch) return null;
+
+  let overlaps = 0;
+  for(let i=0;i<word.length;i++){
+    const r = r0 + dr*i, c = c0 + dc*i;
+    if(!inBounds(size,r,c)) return null;
+    const cell = grid[r][c];
+    const ch = word[i];
+    if(cell.ch && cell.ch !== ch) return null;
+    if(cell.ch === ch) overlaps++;
+
+    // vizinhos laterais precisam estar vazios se não for cruzamento
+    if(dir==="across"){
+      const up=r-1, dn=r+1;
+      if(!cell.ch){
+        if(inBounds(size,up,c) && grid[up][c].ch) return null;
+        if(inBounds(size,dn,c) && grid[dn][c].ch) return null;
+      }
+    } else {
+      const lf=c-1, rt=c+1;
+      if(!cell.ch){
+        if(inBounds(size,r,lf) && grid[r][lf].ch) return null;
+        if(inBounds(size,r,rt) && grid[r][rt].ch) return null;
+      }
+    }
+  }
+  return {overlaps};
+}
+
+function placeWord(grid, word, r0, c0, dir){
+  const dr = dir==="down"?1:0, dc = dir==="across"?1:0;
+  for(let i=0;i<word.length;i++){
+    const r = r0 + dr*i, c = c0 + dc*i;
+    grid[r][c].ch = word[i];
+  }
+}
+
+function generateCrossword(level, seed){
+  const {words, cfg, rng} = pickWords(level, seed);
+  const size = cfg.size;
+  const grid = makeEmptyGrid(size);
+
+  const placed = [];
+  const first = words[0];
+  const rMid = Math.floor(size/2);
+  const cStart = Math.max(0, Math.floor((size - first.a.length)/2));
+  placeWord(grid, first.a, rMid, cStart, "across");
+  placed.push({w:first, r:rMid, c:cStart, dir:"across"});
+
+  function allLetterCells(){
+    const out = [];
+    for(let r=0;r<size;r++){
+      for(let c=0;c<size;c++){
+        if(grid[r][c].ch) out.push({r,c,ch:grid[r][c].ch});
+      }
+    }
+    return out;
+  }
+
+  for(let wi=1;wi<words.length;wi++){
+    const w = words[wi];
+    const candidates = [];
+    const letters = allLetterCells();
+
+    for(const cell of letters){
+      for(let i=0;i<w.a.length;i++){
+        if(w.a[i] !== cell.ch) continue;
+
+        const rA = cell.r, cA = cell.c - i;
+        const okA = canPlace(grid, w.a, rA, cA, "across");
+        if(okA) candidates.push({r:rA,c:cA,dir:"across",score: okA.overlaps});
+
+        const rD = cell.r - i, cD = cell.c;
+        const okD = canPlace(grid, w.a, rD, cD, "down");
+        if(okD) candidates.push({r:rD,c:cD,dir:"down",score: okD.overlaps});
+      }
+    }
+
+    let chosen = null;
+    if(candidates.length){
+      candidates.sort((a,b)=> b.score - a.score);
+      const bestScore = candidates[0].score;
+      const top = candidates.filter(x => x.score >= bestScore - 1);
+      chosen = top[Math.floor(rng()*Math.min(8, top.length))];
+    } else {
+      const dirs = rng() < 0.5 ? ["across","down"] : ["down","across"];
+      let tries = cfg.attempts;
+      while(tries-- > 0 && !chosen){
+        const dir = dirs[Math.floor(rng()*dirs.length)];
+        const r = Math.floor(rng()*size);
+        const c = Math.floor(rng()*size);
+        const ok = canPlace(grid, w.a, r, c, dir);
+        if(ok) chosen = {r,c,dir,score:ok.overlaps};
+      }
+    }
+
+    if(chosen){
+      placeWord(grid, w.a, chosen.r, chosen.c, chosen.dir);
+      placed.push({w, r:chosen.r, c:chosen.c, dir:chosen.dir});
+    }
+  }
+
+  // numeração
+  let num = 1;
+  const starts = [];
+  const isFilled = (r,c)=> grid[r][c].ch !== "";
+  const isStartAcross = (r,c)=> isFilled(r,c) && (!inBounds(size,r,c-1) || !isFilled(r,c-1)) && (inBounds(size,r,c+1) && isFilled(r,c+1));
+  const isStartDown   = (r,c)=> isFilled(r,c) && (!inBounds(size,r-1,c) || !isFilled(r-1,c)) && (inBounds(size,r+1,c) && isFilled(r+1,c));
+
+  for(let r=0;r<size;r++){
+    for(let c=0;c<size;c++){
+      const a = isStartAcross(r,c);
+      const d = isStartDown(r,c);
+      if(a || d){
+        grid[r][c].num = num;
+        starts.push({num, r, c});
+        num++;
+      }
+    }
+  }
+
+  const startNumAt = new Map(starts.map(s => [`${s.r},${s.c}`, s.num]));
+  const acrossClues = [];
+  const downClues = [];
+
+  for(const p of placed){
+    const key = `${p.r},${p.c}`;
+    const n = startNumAt.get(key);
+    if(!n) continue;
+    if(p.dir === "across" && isStartAcross(p.r,p.c)){
+      acrossClues.push({num:n, clue:p.w.c, len:p.w.a.length, answer:p.w.a, r:p.r, c:p.c, dir:"across"});
+    }
+    if(p.dir === "down" && isStartDown(p.r,p.c)){
+      downClues.push({num:n, clue:p.w.c, len:p.w.a.length, answer:p.w.a, r:p.r, c:p.c, dir:"down"});
+    }
+  }
+
+  acrossClues.sort((x,y)=> x.num - y.num);
+  downClues.sort((x,y)=> x.num - y.num);
+
+  return {grid, size, acrossClues, downClues, placedCount: placed.length, requested: words.length, cfg};
+}
+
+/** ========= UI ========= */
+const elGrid = document.getElementById("grid");
+const elAcross = document.getElementById("cluesAcross");
+const elDown = document.getElementById("cluesDown");
+const elStatus = document.getElementById("status");
+const elStats = document.getElementById("stats");
+
+let state = {
+  seed: (Date.now() ^ (Math.random()*1e9))|0,
+  level: "medium",
+  reveal: false,
+  data: null,
+  active: {r:0,c:0,dir:"across"},
+  cellEls: null,
+};
+
+function setCellSize(px){
+  document.documentElement.style.setProperty("--cell", px+"px");
+}
+
+function escapeHtml(s){
+  return (s+"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function labelLevel(l){
+  return l==="easy"?"Fácil":(l==="medium"?"Médio":"Difícil");
+}
+
+function cellHasLetter(r,c){
+  const g = state.data.grid;
+  return g[r] && g[r][c] && !!g[r][c].ch;
+}
+
+function focusCell(r,c){
+  const div = state.cellEls.get(`${r},${c}`);
+  if(!div) return;
+  const inp = div.querySelector("input");
+  if(inp && !inp.disabled) inp.focus();
+}
+
+function setActive(r,c){
+  if(!cellHasLetter(r,c)) return;
+  if(state.active.r === r && state.active.c === c){
+    state.active.dir = (state.active.dir === "across") ? "down" : "across";
+  }
+  state.active.r = r; state.active.c = c;
+  highlightActiveWord();
+}
+
+function getActiveWordCells(){
+  const {grid, size} = state.data;
+  let {r,c,dir} = state.active;
+  const dr = dir==="down"?1:0, dc = dir==="across"?1:0;
+
+  let rr=r, cc=c;
+  while(inBounds(size, rr-dr, cc-dc) && grid[rr-dr][cc-dc].ch){
+    rr-=dr; cc-=dc;
+  }
+  const cells = [];
+  while(inBounds(size, rr, cc) && grid[rr][cc].ch){
+    cells.push({r:rr,c:cc});
+    rr+=dr; cc+=dc;
+  }
+  return cells;
+}
+
+function highlightActiveWord(){
+  if(!state.data || !state.cellEls) return;
+  for(const div of state.cellEls.values()){
+    div.classList.remove("active","inWord");
+  }
+  const cells = getActiveWordCells();
+  for(const {r,c} of cells){
+    const div = state.cellEls.get(`${r},${c}`);
+    if(div) div.classList.add("inWord");
+  }
+  const activeDiv = state.cellEls.get(`${state.active.r},${state.active.c}`);
+  if(activeDiv) activeDiv.classList.add("active");
+}
+
+function onInput(e){
+  const inp = e.target;
+  const r = +inp.dataset.r, c = +inp.dataset.c;
+  inp.value = normalizeWord(inp.value).slice(0,1);
+
+  const dir = state.active.dir;
+  const dr = dir==="down"?1:0, dc = dir==="across"?1:0;
+  const nr = r + dr, nc = c + dc;
+  if(cellHasLetter(nr,nc)) focusCell(nr,nc);
+  highlightActiveWord();
+}
+
+function onKeyDown(e){
+  const inp = e.target;
+  const r = +inp.dataset.r, c = +inp.dataset.c;
+
+  if(e.key === "Tab"){
+    e.preventDefault();
+    state.active.dir = (state.active.dir === "across") ? "down" : "across";
+    highlightActiveWord();
+    return;
+  }
+
+  const move = (dr,dc)=>{
+    const nr=r+dr, nc=c+dc;
+    if(cellHasLetter(nr,nc)){
+      state.active.r=nr; state.active.c=nc;
+      focusCell(nr,nc);
+      highlightActiveWord();
+      e.preventDefault();
+    }
+  };
+
+  if(e.key === "ArrowLeft")  return move(0,-1);
+  if(e.key === "ArrowRight") return move(0, 1);
+  if(e.key === "ArrowUp")    return move(-1,0);
+  if(e.key === "ArrowDown")  return move( 1,0);
+
+  if(e.key === "Backspace"){
+    if(inp.value){
+      inp.value = "";
+      e.preventDefault();
+      return;
+    }
+    const dir = state.active.dir;
+    const dr = dir==="down"?-1:0, dc = dir==="across"?0:-1;
+    const nr = r + dr, nc = c + dc;
+    if(cellHasLetter(nr,nc)) focusCell(nr,nc);
+  }
+
+  setActive(r,c);
+}
+
+function readAllInputs(){
+  const letters = new Map();
+  for(const [key, div] of state.cellEls.entries()){
+    const inp = div.querySelector("input");
+    if(!inp) continue;
+    letters.set(key, normalizeWord(inp.value).slice(0,1));
+  }
+  return letters;
+}
+
+function clearMarks(){
+  for(const div of state.cellEls.values()){
+    div.classList.remove("correct","wrong");
+  }
+}
+
+function check(){
+  if(state.reveal) return;
+  clearMarks();
+  const vals = readAllInputs();
+  let ok=0, total=0;
+  const {grid, size} = state.data;
+
+  for(let r=0;r<size;r++){
+    for(let c=0;c<size;c++){
+      if(!grid[r][c].ch) continue;
+      total++;
+      const div = state.cellEls.get(`${r},${c}`);
+      const v = vals.get(`${r},${c}`) || "";
+      if(v && v === grid[r][c].ch){
+        div.classList.add("correct"); ok++;
+      } else if(v){
+        div.classList.add("wrong");
+      }
+    }
+  }
+  elStatus.textContent = `Checagem: ${ok}/${total} letras corretas. (Seed: ${state.seed})`;
+}
+
+function clearAll(){
+  if(!state.cellEls) return;
+  clearMarks();
+  for(const div of state.cellEls.values()){
+    const inp = div.querySelector("input");
+    if(inp && !inp.disabled) inp.value = "";
+  }
+  elStatus.textContent = `Campos limpos. (Seed: ${state.seed})`;
+}
+
+function reveal(){
+  const {grid, size} = state.data;
+  for(let r=0;r<size;r++){
+    for(let c=0;c<size;c++){
+      if(!grid[r][c].ch) continue;
+      const div = state.cellEls.get(`${r},${c}`);
+      const inp = div?.querySelector("input");
+      if(inp){
+        inp.value = grid[r][c].ch;
+        inp.disabled = true;
+      }
+    }
+  }
+  state.reveal = true;
+  elStatus.textContent = `Respostas reveladas. Clique em "Gerar" para reiniciar. (Seed: ${state.seed})`;
+}
+
+function render(){
+  const {grid, size, acrossClues, downClues, placedCount, requested, cfg} = state.data;
+  setCellSize(cfg.cell);
+
+  elGrid.style.gridTemplateColumns = `repeat(${size}, var(--cell))`;
+  elGrid.innerHTML = "";
+
+  const cellEls = new Map();
+
+  for(let r=0;r<size;r++){
+    for(let c=0;c<size;c++){
+      const cell = grid[r][c];
+      const div = document.createElement("div");
+      div.className = "cell" + (cell.ch ? "" : " block");
+      div.dataset.r = r; div.dataset.c = c;
+
+      if(cell.ch){
+        if(cell.num){
+          const num = document.createElement("div");
+          num.className = "num";
+          num.textContent = cell.num;
+          div.appendChild(num);
+        }
+        const inp = document.createElement("input");
+        inp.autocomplete = "off";
+        inp.inputMode = "text";
+        inp.maxLength = 1;
+        inp.dataset.r = r; inp.dataset.c = c;
+        inp.ariaLabel = `Linha ${r+1}, coluna ${c+1}`;
+        inp.disabled = state.reveal;
+        inp.value = "";
+        inp.addEventListener("input", onInput);
+        inp.addEventListener("keydown", onKeyDown);
+        inp.addEventListener("focus", () => setActive(r,c));
+        div.addEventListener("mousedown", (e) => { e.preventDefault(); inp.focus(); });
+        div.appendChild(inp);
+      }
+
+      elGrid.appendChild(div);
+      cellEls.set(`${r},${c}`, div);
+    }
+  }
+
+  function renderClues(list, el){
+    el.innerHTML = "";
+    for(const it of list){
+      const row = document.createElement("div");
+      row.className = "clue";
+      row.innerHTML = `<b>${it.num}.</b> ${escapeHtml(it.clue)} <span class="meta">(${it.len})</span>`;
+      row.addEventListener("click", () => { state.active.dir = it.dir; setActive(it.r, it.c); focusCell(it.r, it.c); });
+      el.appendChild(row);
+    }
+    if(!list.length){
+      el.innerHTML = `<div class="muted">Nenhuma palavra desse tipo coube na grade nesta variação.</div>`;
+    }
+  }
+  renderClues(acrossClues, elAcross);
+  renderClues(downClues, elDown);
+
+  elStats.textContent = `Palavras: ${placedCount}/${requested} • Grade: ${size}×${size}`;
+  elStatus.textContent = `Seed: ${state.seed} • Dificuldade: ${labelLevel(state.level)} • Clique em "Nova variação" para randomizar.`;
+
+  state.cellEls = cellEls;
+
+  const first = (acrossClues[0] || downClues[0]);
+  if(first){
+    state.active.dir = first.dir;
+    state.active.r = first.r; state.active.c = first.c;
+    highlightActiveWord();
+    focusCell(first.r, first.c);
+  }
+}
+
+function generate(){
+  state.reveal = false;
+  state.data = generateCrossword(state.level, state.seed);
+  render();
+}
+
+document.getElementById("difficulty").addEventListener("change", (e)=>{
+  state.level = e.target.value;
+  state.seed = (Date.now() ^ (Math.random()*1e9))|0;
+  generate();
+});
+document.getElementById("btnGenerate").addEventListener("click", ()=>{
+  state.seed = (Date.now() ^ (Math.random()*1e9))|0;
+  generate();
+});
+document.getElementById("btnNewSeed").addEventListener("click", ()=>{
+  state.seed = (Date.now() ^ (Math.random()*1e9))|0;
+  generate();
+});
+document.getElementById("btnCheck").addEventListener("click", check);
+document.getElementById("btnClear").addEventListener("click", clearAll);
+document.getElementById("btnReveal").addEventListener("click", reveal);
+
+// primeira carga
+state.level = document.getElementById("difficulty").value;
+generate();
+</script>
+</body>
+</html>
